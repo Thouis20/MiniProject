@@ -1,12 +1,34 @@
-# MiniProject
-//detect can
-#include <Wire.h>
 #include <Zumo32U4.h>
+#define NUM_SENSORS 5
+#include <Wire.h>
 
-//here we activate the sensors
-Zumo32U4Motors motors;
+
+Zumo32U4LineSensors lineSensors;
+Zumo32U4ButtonA ButtonA;
+Zumo32U4Motors Motors;
+Zumo32U4Buzzer Buzz;
+Zumo32U4IMU imu;
+Zumo32U4Encoders encoders;
+Zumo32U4LCD lcd;
 Zumo32U4ProximitySensors proxSensors;
-Zumo32U4ButtonA buttonA;
+
+bool useEmitters = true;
+uint16_t lineSensorValues[NUM_SENSORS];
+struct LineSensorsWhite { // True if White, False if Black
+  bool L;
+  bool LC;
+  bool C;
+  bool RC;
+  bool R;
+};
+int threshold[NUM_SENSORS] = {150, 150, 150, 150, 150}; // White threshold, white return values lower than this
+LineSensorsWhite sensorsState = {0, 0, 0, 0, 0};
+
+uint32_t turnAngle = 0;
+int16_t turnRate;
+int16_t gyroOffset;
+uint16_t gyroLastUpdate = 0;
+int Speed = 100;
 
 
 
@@ -14,10 +36,19 @@ Zumo32U4ButtonA buttonA;
 
 void setup() {
   Serial.begin(9600);
+  ButtonA.waitForButton();
+  lineSensors.initFiveSensors();
+  delay(100);
+  calibrateThreshold();
+  turnSensorSetup();
   proxSensors.initFrontSensor();
 
-
 }
+
+
+
+
+
 
 void detectType() {
 
@@ -27,56 +58,341 @@ void detectType() {
 
 
 
-  int brightnessLevels[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-  int leftValue = proxSensors.countsFrontWithLeftLeds();
-  int rightValue = proxSensors.countsFrontWithRightLeds();
-  proxSensors.setBrightnessLevels(brightnessLevels, 10);
+  while (true) {
 
-  proxSensors.read();
-
-
-
-  Serial.println((String)leftValue + (String)rightValue);
-
-  delay(100);
-
-  //This is for the small container.
-  if (leftValue <= 5 && leftValue >= 1 && rightValue  <= 5 && rightValue >= 1) {
+    int brightnessLevels[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    int leftValue = proxSensors.countsFrontWithLeftLeds();
+    int rightValue = proxSensors.countsFrontWithRightLeds();
+    proxSensors.setBrightnessLevels(brightnessLevels, 10);
+    // readSensors();
+    lineSensors.emittersOn();
+    delay(500);
+    proxSensors.read();
+    delay(100);
 
 
-    motors.setLeftSpeed(-50);
-    motors.setRightSpeed(-50);
-
-    delay(250);
+    //This is for the large container.
+    if (leftValue == 10 && rightValue  == 10) {
 
 
-    motors.setLeftSpeed(0);
-    motors.setRightSpeed(0);
+      //rTurn
+      while (((((int32_t)turnAngle >> 16) * 360) >> 16) > -180 ) {
+        Motors.setSpeeds(100, -100);
+        turnSensorUpdate();
 
-    //buttonA.waitForButton();
+      }
+      Motors.setSpeeds(0, 0);
+      delay(100);
+      //Serial.println((((int32_t)turnAngle >> 16) * 360) >> 16);
+      Motors.setSpeeds(150, 150);
+      delay(1500);
 
 
+
+      //lTurn
+      while (((((int32_t)turnAngle >> 16) * 360) >> 16) < -90 ) {
+        Motors.setSpeeds(-100, 100);
+        turnSensorUpdate();
+
+      }
+      Motors.setSpeeds(0, 0);
+      delay(100);
+      Motors.setSpeeds(150, 150);
+      delay(700);
+
+
+
+      //lTurn2
+      while (((((int32_t)turnAngle >> 16) * 360) >> 16) < 0 ) {
+        Motors.setSpeeds(-100, 100);
+        turnSensorUpdate();
+
+      }
+      Motors.setSpeeds(200, 200);
+      delay(1500);
+      readSensors();
+      while (lineSensorValues[0] > 850 && lineSensorValues[1] > 850 && lineSensorValues[2] > 850 && lineSensorValues[3] > 850 && lineSensorValues[4] > 850) {
+        Motors.setSpeeds(100, 100);
+        readSensors();
+      }
+
+      Motors.setSpeeds(-100, -100);
+      delay(500);
+
+      turnSensorUpdate();
+      while (((((int32_t)turnAngle >> 16) * 360) >> 16) > -180 ) {
+        Motors.setSpeeds(100, -100);
+        turnSensorUpdate();
+
+      }
+      Motors.setSpeeds(0, 0);
+      delay(1000);
+
+      Motors.setSpeeds(100, 100);
+      delay(2500);
+
+      Motors.setSpeeds(100, -100);
+      delay(1000);
+
+      Motors.setSpeeds(100, 100);
+      delay(1500);
+
+      Motors.setSpeeds(100, -100);
+      delay(1000);
+
+      Motors.setSpeeds(0, 0);
+      delay(100);
+
+      readSensors();
+      while (!sensorsState.C) {
+        readSensors();
+        Motors.setSpeeds(150, 150);
+
+        if (sensorsState.C == true) {
+          readSensors();
+          Motors.setSpeeds(0, 0);
+          delay(100);
+          Motors.setSpeeds(75, 75);
+          delay(800);
+          Motors.setSpeeds(0, 0);
+          while (((((int32_t)turnAngle >> 16) * 360) >> 16) > -90 ) {
+            Motors.setSpeeds(100, -100);
+            turnSensorUpdate();
+
+          }
+          Motors.setSpeeds(0, 0);
+          delay(500);
+
+        }
+      }
+    }
+
+
+    proxSensors.read();
+    delay(100);
+    //This is for the small container.
+    if (leftValue <= 9 && leftValue >= 5 && rightValue  <= 9 && rightValue >= 5) {
+      Motors.setLeftSpeed(100);
+      Motors.setRightSpeed(100);
+      delay(250);
+
+
+
+      Motors.setSpeeds(75, 75);
+      delay(750);
+      while (true) {
+
+
+        readSensors();
+
+
+        if (lineSensorValues[0] > 800 && lineSensorValues[1] > 800  && lineSensorValues[3] > 800 && lineSensorValues[4] > 800) {
+          Motors.setSpeeds(150, 150);
+          delay(50);
+          readSensors();
+          if (lineSensorValues[2] <= 750) {
+            Motors.setSpeeds(-100, -100);
+            delay(200);
+            break;
+
+          }
+        }
+
+      }
+      Motors.setSpeeds(-100, -100);
+      delay(2500);
+      break;
+    }
+  }
+}
+
+
+
+
+void findLine() {
+  //Buzz.playNote(NOTE_C(5), 500, 15);
+  //delay(250);
+  readSensors();
+  while (!sensorsState.C) {
+    readSensors();
+    Motors.setSpeeds(150, 150);
+
+    if (sensorsState.C == true) {
+      readSensors();
+      Motors.setSpeeds(0, 0);
+      delay(100);
+      Motors.setSpeeds(75, 75);
+      delay(800);
+      Motors.setSpeeds(0, 0);
+      rTurn();
+      Motors.setSpeeds(0, 0);
+      delay(500);
+
+    }
   }
 
-//This is for the large container. 
-  else if (leftValue <= 10 && leftValue >= 6 && rightValue  <= 10 && rightValue >= 6) {
 
-    motors.setLeftSpeed(50);
-    motors.setRightSpeed(50);
-
-    delay(250);
-
-
-    motors.setLeftSpeed(0);
-    motors.setRightSpeed(0);
-
-    // buttonA.waitForButton();
-
-  }
 }
 
 void loop() {
 
-  detectType();
+  findLine();
+  while (true) {
+    linefollower();
+    detectType();
+  }
 
+
+}
+
+
+void readSensors() {
+
+  // Next line reads the sensor values and store them in the array lineSensorValues , aparameter passed by reference
+  lineSensors.read(lineSensorValues, useEmitters ? QTR_EMITTERS_ON : QTR_EMITTERS_OFF);
+  // In the following lines use the values of the sensors to update the struct
+  sensorsState = {false, false, false, false, false};
+  if ( lineSensorValues[0] < threshold[0])
+    sensorsState.L = true;
+  if ( lineSensorValues[1] < threshold[1])
+    sensorsState.LC = true;
+  if ( lineSensorValues[2] < threshold[2])
+    sensorsState.C = true;
+  if ( lineSensorValues[3] < threshold[3])
+    sensorsState.RC = true;
+  if ( lineSensorValues[4] < threshold[4])
+    sensorsState.R = true;
+}
+
+void calibrateThreshold() {
+  int  newThrehold[NUM_SENSORS] = {0, 0, 0, 0, 0};
+  for (int i = 0; i < 10; i++) {
+    lineSensors.read(lineSensorValues, useEmitters ? QTR_EMITTERS_ON : QTR_EMITTERS_OFF);
+    for (int j = 0; j < NUM_SENSORS; j++) {
+      newThrehold[j] +=  lineSensorValues[j] * 0.1;
+    }
+    delay(300);
+  }
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    threshold[i] = newThrehold[i] - 150;
+  }
+}
+void rTurn() {
+  while (((((int32_t)turnAngle >> 16) * 360) >> 16) > -90 ) {
+    Motors.setSpeeds(100, -100);
+    turnSensorUpdate();
+    //Serial.println((String)(((int32_t)turnAngle >> 16) * 360));
+    //Serial.print(" yo ");
+  }
+}
+void turnSensorUpdate() {
+  // Read the measurements from the gyro.
+  imu.readGyro();
+  turnRate = imu.g.z - gyroOffset;
+
+  // Figure out how much time has passed since the last update (dt)
+  uint16_t m = micros();
+  uint16_t dt = m - gyroLastUpdate;
+  gyroLastUpdate = m;
+
+  // Multiply dt by turnRate in order to get an estimation of how
+  // much the robot has turned since the last update.
+  // (angular change = angular velocity * time)
+  int32_t d = (int32_t)turnRate * dt;
+
+  // The units of d are gyro digits times microseconds.  We need
+  // to convert those to the units of turnAngle, where 2^29 units
+  // represents 45 degrees.  The conversion from gyro digits to
+  // degrees per second (dps) is determined by the sensitivity of
+  // the gyro: 0.07 degrees per second per digit.
+  //
+  // (0.07 dps/digit) * (1/1000000 s/us) * (2^29/45 unit/degree)
+  // = 14680064/17578125 unit/(digit*us)
+  turnAngle += (int64_t)d * 14680064 / 17578125;
+}
+void turnSensorSetup()
+{
+  Wire.begin();
+  imu.init();
+  imu.enableDefault();
+  imu.configureForTurnSensing();
+
+  lcd.clear();
+  lcd.print(F("Gyro cal"));
+
+  // Turn on the yellow LED in case the LCD is not available.
+  ledYellow(1);
+
+  // Delay to give the user time to remove their finger.
+  // delay(250);
+
+  // Calibrate the gyro.
+  int32_t total = 0;
+  for (uint16_t i = 0; i < 1024; i++)
+  {
+    // Wait for new data to be available, then read it.
+    while (!imu.gyroDataReady()) {}
+    imu.readGyro();
+
+    // Add the Z axis reading to the total.
+    total += imu.g.z;
+  }
+  ledYellow(0);
+  gyroOffset = total / 1024;
+
+  // Display the angle (in degrees from -180 to 180) until the
+  // user presses A.
+  lcd.clear();
+  turnSensorReset();
+  if (1 > 0)
+  {
+    turnSensorUpdate();
+    lcd.gotoXY(0, 0);
+    lcd.print((((int32_t)turnAngle >> 16) * 360) >> 16);
+    lcd.print(F("   "));
+  }
+
+}
+void turnSensorReset()
+{
+  gyroLastUpdate = micros();
+  turnAngle = 0;
+}
+
+
+void linefollower() {
+
+
+  Motors.setSpeeds(100, 50);
+  delay(100);
+  while (true) {
+
+
+    readSensors();
+    if (lineSensorValues[0] <= 750 && lineSensorValues[4] <= 750) {
+
+      Motors.setSpeeds(0, 0);
+      delay(100);
+      break;
+    }
+
+
+    readSensors();
+    if (lineSensorValues[1] > 800) {
+      Motors.setSpeeds(100, 50);
+      delay(100);
+    }
+    readSensors();
+    if (lineSensorValues[3] > 800) {
+      Motors.setSpeeds(50, 100);
+      delay(100);
+    }
+
+
+  }
+}
+
+
+void printSensorRead() {
+  Serial.println("L " + (String)lineSensorValues[0] + " LC " + (String)lineSensorValues[1] + " C " + (String)lineSensorValues[2] + " RC " + (String)lineSensorValues[3] + " R " + (String)lineSensorValues[4]);
 }
