@@ -65,6 +65,7 @@ void detectType() {
 
     //This is for the large container.
     if (leftValue == 10 && rightValue  == 10) {
+      //rTurn
       while (((((int32_t)turnAngle >> 16) * 360) >> 16) > -180 ) {
         Motors.setSpeeds(100, -100);
         turnSensorUpdate();
@@ -75,6 +76,7 @@ void detectType() {
       Motors.setSpeeds(150, 150);
       delay(1500);
       
+     
       while (((((int32_t)turnAngle >> 16) * 360) >> 16) < -90 ) {
         Motors.setSpeeds(-100, 100);
         turnSensorUpdate();
@@ -84,7 +86,7 @@ void detectType() {
       delay(100);
       Motors.setSpeeds(150, 150);
       delay(700);
-
+      
       while (((((int32_t)turnAngle >> 16) * 360) >> 16) < 0 ) {
         Motors.setSpeeds(-100, 100);
         turnSensorUpdate();
